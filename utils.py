@@ -112,7 +112,7 @@ def set_logger(log_path):
     stream_handler.setFormatter(logging.Formatter('%(message)s'))
     logger.addHandler(stream_handler)
 
-def load_checkpoint(checkpoint, model, optim=None, lr_sched=None, data_parallel=False):
+def load_checkpoint(checkpoint, model, optim=None, lr_sched=None, data_parallel=False, device=None):
     """Loads model parameters (state_dict) from file_path.
 
     Args:
@@ -123,7 +123,7 @@ def load_checkpoint(checkpoint, model, optim=None, lr_sched=None, data_parallel=
     if not os.path.exists(checkpoint):
         raise("File doesn't exist {}".format(checkpoint))
 
-    state_dict = torch.load(checkpoint, map_location=torch.device('mps'), weights_only=False)
+    state_dict = torch.load(checkpoint, map_location=device, weights_only=False)
     #print(state_dict['model_state_dict'].keys())  
     if data_parallel:
         state_dict['model_state_dict'] = {

@@ -1,4 +1,10 @@
 # Imports
+# Temporary fix for OpenMP dll issue (speechbrain related)
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+# Fix to use more cores for speechbrain
+os.environ['NUMEXPR_MAX_THREADS'] = '10'
+
 import torch
 import dcc_tf_binaural as network
 import utils
@@ -6,12 +12,20 @@ import soundfile as sf
 import librosa
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+
 
 class AudioExtractor:
     def __init__(self):
         self.model = None
-        self.chunk_size = 416 # Number of samples 
-        self.device = torch.device('mps')
+        self.chunk_size = 256 # Number of samples 
+        acceleration = torch.cuda.is_available()
+
+        print("Acceleration: ", acceleration)
+        if not acceleration:
+            exit()
+        torch.cuda.empty_cache()
+        self.device = torch.device('cuda')
         self.enc_buf = None
         self.dec_buf = None
         self.out_buf = None
@@ -35,7 +49,7 @@ class AudioExtractor:
                         conditioning="mult",
                         out_buf_len=4)
         model.to(self.device)
-        utils.load_checkpoint("model/39.pt", model)
+        utils.load_checkpoint("model/39.pt", model, device=self.device)
         if streaming:
             self.enc_buf, self.dec_buf, self.out_buf = model.init_buffers(1, self.device)
         self.model = model
@@ -87,21 +101,28 @@ class AudioExtractor:
             chunk_tensor = torch.tensor(chunk.T, device=self.device, dtype=torch.float32).unsqueeze(0)
             model_input = {'mixture': chunk_tensor, 'label_vector': emb}
             # Run the model
-            output, self.enc_buf, self.dec_buf, self.out_buf = model(model_input, 
-                                                                    self.enc_buf, 
-                                                                    self.dec_buf, 
-                                                                    self.out_buf)
+            with torch.no_grad():
+                output, self.enc_buf, self.dec_buf, self.out_buf = self.model(model_input, 
+                                                                        self.enc_buf, 
+                                                                        self.dec_buf, 
+                                                                        self.out_buf)
             output_tensor = output['x']
-            output_chunk = output_tensor.squeeze(0).T.cpu().detach()
+            output_chunk = output_tensor.squeeze(0).T.to("cpu", non_blocking=True).detach()
             end = time.perf_counter()
             # Accumulate the audio
             processed_audio.extend(output_chunk.flatten())
             time_arr.append(end - start)
+
+            del output, output_tensor, chunk_tensor
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
         elapsed_time = np.mean(time_arr)
         print(f"Average chunk processing time: {elapsed_time:.6f} sec")
         processed_audio = np.array(processed_audio, dtype=np.float32).reshape(-1, 2)
         # Save the audio
         sf.write("sounds/bird_stream_test.wav", processed_audio, samplerate=sr)
+        return np.median(time_arr)
 
     def int16_to_float32(self, chunk):
         return chunk.astype(np.float32) / 32768.0
@@ -109,6 +130,22 @@ class AudioExtractor:
     def float32_to_int16(self, chunk):
         return np.clip(chunk * 32768, -32768, 32767).astype(np.int16)
     
+    def chunk_size_analysis(self):
+        median_times = []
+        chunk_sizes = []
+        for i in range(5, 10):
+            self.chunk_size = 2 ** i
+            chunk_sizes.append(self.chunk_size)
+            t = self.stream_test()
+
+            median_times.append(t)
+        plt.plot(chunk_sizes, median_times)
+        plt.title('Median processing time vs chunk size')
+        plt.xlabel('Chunk size')
+        plt.ylabel('Median process time')
+        plt.show()
+
+            
     def run(self, label, chunk):
         # Check if model is initialized
         if self.model == None:
@@ -135,4 +172,4 @@ class AudioExtractor:
 
 if __name__ == '__main__':
     audioProcessor = AudioExtractor()
-    audioProcessor.stream_test()
+    audioProcessor.chunk_size_analysis()
