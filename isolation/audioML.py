@@ -3,7 +3,7 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 # Fix to use more cores for speechbrain
-os.environ['NUMEXPR_MAX_THREADS'] = '10'
+os.environ['NUMEXPR_MAX_THREADS'] = '9'
 
 import torch
 import dcc_tf_binaural as network
@@ -37,6 +37,9 @@ class AudioExtractor:
             "thunderstorm", "toilet_flush"]
         self.birds = 2
         self.cat = 3
+        self.label = None
+        self.emb = None
+        self.model_input = {'mixture': None, 'label_vector': None}
     
     def initialize_model(self, streaming=True):
         model = network.Net(label_len=20,
@@ -91,6 +94,7 @@ class AudioExtractor:
         # Stores time elapsed for each chunk
         time_arr = []
         for i in range(0, len(y) // 5, self.chunk_size):
+            torch.cuda.synchronize()
             start = time.perf_counter()
             # Skip the last chunk if too small
             try:
@@ -108,6 +112,7 @@ class AudioExtractor:
                                                                         self.out_buf)
             output_tensor = output['x']
             output_chunk = output_tensor.squeeze(0).T.to("cpu", non_blocking=True).detach()
+            torch.cuda.synchronize()
             end = time.perf_counter()
             # Accumulate the audio
             processed_audio.extend(output_chunk.flatten())
@@ -115,7 +120,7 @@ class AudioExtractor:
 
             del output, output_tensor, chunk_tensor
             torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+            
 
         elapsed_time = np.mean(time_arr)
         print(f"Average chunk processing time: {elapsed_time:.6f} sec")
@@ -151,23 +156,41 @@ class AudioExtractor:
         if self.model == None:
             self.initialize_model()
         # Create one hot encoded label vector
-        label_index = self.labels.index(label)
-        emb = torch.zeros(1,20)
-        emb[0,label_index] = 1
-        emb = emb.to(self.device)
+        if label != self.label:
+            label_index = self.labels.index(label)
+            emb = torch.zeros(1,20)
+            emb[0,label_index] = 1
+            self.emb = emb.to(self.device)
+        
+        #Log time
+        #t_start = time.perf_counter()
         # Create input structure to pass as input to model
         chunk = self.int16_to_float32(chunk)
-        chunk_tensor = torch.tensor(chunk, device=self.device, dtype=torch.float32).unsqueeze(0)
-        model_input = {'mixture': chunk_tensor, 'label_vector': emb}
+        chunk_tensor = torch.from_numpy(chunk).to(self.device, dtype=torch.float32).unsqueeze(0)
+        
+        self.model_input['mixture'] = chunk_tensor
+        self.model_input['label_vector'] = self.emb
+        torch.cuda.synchronize()
         # Run the model forward pass
-        output, self.enc_buf, self.dec_buf, self.out_buf = self.model(model_input, 
-                                                                self.enc_buf, 
-                                                                self.dec_buf, 
-                                                                self.out_buf)
+        t_start = time.perf_counter()
+        with torch.inference_mode():
+            output, self.enc_buf, self.dec_buf, self.out_buf = self.model(self.model_input, 
+                                                                    self.enc_buf, 
+                                                                    self.dec_buf, 
+                                                                    self.out_buf)
+        
+        torch.cuda.synchronize()
+        t_end = time.perf_counter()
+        #print(f'Inference time {t_end - t_start:.4f}')
         # Extract the audio output
-        output_tensor = output['x']
-        output_chunk = output_tensor.squeeze(0).T.cpu().detach().numpy()
+        output_tensor = output['x'].squeeze(0).T
+        #output_tensor = output['x'].squeeze(0).T.contiguous().pin_memory()
+
+        output_chunk = output_tensor.to("cpu", non_blocking=True).detach().numpy()
         output_audio = self.float32_to_int16(output_chunk)
+        #t_end = time.perf_counter()
+        #del output, output_tensor, chunk_tensor
+        #torch.cuda.empty_cache()
         return output_audio
 
 if __name__ == '__main__':
