@@ -3,9 +3,7 @@ This script deals with attempting to send data.
 '''
 
 import serial
-import csv
 import numpy as np
-import soundfile as sf
 import time
 
 # Set sample rate
@@ -29,40 +27,20 @@ if ser is None:
 
 # Reset buffer
 ser.reset_input_buffer()
+print("Sending stereo audio...")
 
-# Set constants for communication
-running = True
-#sample_size = 2
-print("Receiving stereo audio...")
-
-#data = []
-count = 0
-value = 300
-start = time.perf_counter()
+value = 0
 try:
-    while value < 50000: # and shared_queue.empty():
-        stop = time.perf_counter()
-        if stop - start >= T_PERIOD:
-            start = stop
-            #value  = ser.read(1)
-            #value = int.from_bytes(value, byteorder='big')
-            value += 1
-            #value &= 0xFF
-            sendVal = np.uint8(value & 0xFF)
-            print('Send val is ', sendVal.tobytes())
-            ser.write(sendVal.tobytes())
-            
-            sendVal2 = np.uint8((value >> 8) & 0xFF)
-            ser.write(sendVal2.tobytes())
-            print('Send val is ', sendVal2.tobytes())
-            print(f" Hex : {hex(value)} and value: {value}, value written : {sendVal} and {sendVal2}")
-            input()
-            
-            #input()
-
+    while value < 50000: 
+        sendChar = np.uint8(value & 0xFF).tobytes()
+        ser.write(sendChar)
+        value += 1
+          
         
-    print(value)
+   
 except KeyboardInterrupt:
-    print(f'Received {count} data points')
+    print(f'Sent {value} data points')
+
+finally:
     ser.reset_input_buffer()
     ser.close()
