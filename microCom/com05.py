@@ -6,12 +6,18 @@ import serial
 import numpy as np
 import time
 
+
+# function to fill buffer
+def fillBuffer(val):
+    buffer = [i & 0xFF for i in range(val, val + 3072)]
+    print(buffer[:10])
+    return buffer
 # Set sample rate
 SAMPLE_RATE = 44100
-T_PERIOD = 1 / SAMPLE_RATE
+SAMPLE_PERIOD = 1 / SAMPLE_RATE
 
 # Setup communication
-BAUD_RATE = 3125000
+BAUD_RATE = 441000
 ser = serial.Serial(
     port='COM3',          # Change this to your actual port (e.g., /dev/ttyUSB0)
     baudrate=BAUD_RATE,        # Baud rate
@@ -31,10 +37,20 @@ print("Sending stereo audio...")
 
 value = 0
 try:
-    while value < 50000: 
-        sendChar = np.uint8(value & 0xFF).tobytes()
-        ser.write(sendChar)
-        value += 1
+    while True: 
+        input(f'Enter to send {value} - {value + 5}')
+        
+        for i in range(5):
+            curr_time = time.perf_counter()
+            buff = bytes(fillBuffer(value))
+            print(f"Sending {buff[:10]}")
+            value += 3072
+            ser.write(buff)
+           
+
+
+        
+        
           
         
    

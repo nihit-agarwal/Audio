@@ -35,7 +35,7 @@ ser.reset_input_buffer()
 
 # Set constants for communication
 running = True
-sample_size = 180
+sample_size = 1
 print("Receiving stereo audio...")
 
 data = []
