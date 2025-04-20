@@ -38,7 +38,7 @@ try:
         if ser.in_waiting >= sample_size:
             raw_data = ser.read(sample_size)
 
-            value = int.from_bytes(raw_data, byteorder='little') 
+            value = int.from_bytes(raw_data, byteorder='big') 
             #value = ((value & 0xFF) << 8) + (value >> 8)
             print(f" Hex : {hex(value)} and value: {value}")
             count += 1

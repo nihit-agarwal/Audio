@@ -6,7 +6,7 @@ from scipy.signal import stft
 from pyroomacoustics.doa import srp
 from pyroomacoustics.experimental.localization import tdoa
 import pyroomacoustics as pra
-import utils as utils
+import isolation.utils as utils
 import torch
 
 try:

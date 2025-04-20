@@ -6,8 +6,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 os.environ['NUMEXPR_MAX_THREADS'] = '9'
 
 import torch
-import dcc_tf_binaural as network
-import utils
+import isolation.dcc_tf_binaural as network
+import isolation.utils as utils
 import soundfile as sf
 import librosa
 import numpy as np
@@ -76,29 +76,32 @@ class AudioExtractor:
         sf.write("sounds/bird_offline_test.wav", numpy_array.T, sr)
 
         
-    def stream_test(self):
+    def stream_test(self, in_file=None, out_file=None, label=2):
         # Check if model was initialized
         if self.model == None:
             self.initialize_model()
             model = self.model
         # Read test audio
-        y, sr = sf.read("sounds/binaural_output.wav",dtype="float32")
+        if in_file == None:
+            y, sr = sf.read("sounds/binaural_output.wav",dtype="float32")
+        else:
+            y, sr = sf.read(in_file,dtype="float32")
         # List to stored final output
         processed_audio = []
         # Create the label vector
         emb = torch.zeros(1,20)
-        emb[0,self.birds] = 1 
+        emb[0,label] = 1 
         emb = emb.to(self.device)
         # Emulate how the input stream audio would be
         y = y.flatten()
         # Stores time elapsed for each chunk
         time_arr = []
-        for i in range(0, len(y) // 5, self.chunk_size):
+        for i in range(0, len(y), 2 * self.chunk_size):
             torch.cuda.synchronize()
             start = time.perf_counter()
             # Skip the last chunk if too small
             try:
-                chunk = y[i : i + self.chunk_size].reshape(self.chunk_size // 2,2)
+                chunk = y[i : i + 2 * self.chunk_size].reshape(self.chunk_size ,2)
             except:
                 continue
             # Create input structure
@@ -122,19 +125,30 @@ class AudioExtractor:
             torch.cuda.empty_cache()
             
 
-        elapsed_time = np.mean(time_arr)
-        print(f"Average chunk processing time: {elapsed_time:.6f} sec")
         processed_audio = np.array(processed_audio, dtype=np.float32).reshape(-1, 2)
         # Save the audio
-        sf.write("sounds/bird_stream_test.wav", processed_audio, samplerate=sr)
-        return np.median(time_arr)
+        if out_file == None:
+            sf.write("sounds/bird_stream_test.wav", processed_audio, samplerate=sr)
+        else:
+            sf.write(out_file, processed_audio, samplerate=sr)
+        return time_arr
 
-    def int16_to_float32(self, chunk):
-        return chunk.astype(np.float32) / 32768.0
-    
-    def float32_to_int16(self, chunk):
-        return np.clip(chunk * 32768, -32768, 32767).astype(np.int16)
-    
+    def uint16_to_float32(self, chunk):
+        # First convert uint16 (0 to 65535) to a centered format by subtracting 32768
+        # Then normalize to -1.0 to 1.0 float range
+
+        flatten_input = np.array(chunk)
+        chunk = np.vstack([flatten_input, flatten_input])
+        print("Input shape: ", chunk.shape)
+        return (chunk.astype(np.float32) - 32768) / 32768.0
+        
+    def float32_to_uint16(self, chunk):
+        # Scale float values (-1.0 to 1.0) to centered uint16 range
+        # Add 32768 to shift from signed-style range to unsigned range
+        print("output shape: ", chunk.shape)
+        chunk = chunk[0, :]
+        chunk = np.clip(chunk * 32768 + 32768, 0, 65535).astype(np.uint16).tolist()
+        return chunk
     def chunk_size_analysis(self):
         median_times = []
         chunk_sizes = []
@@ -165,7 +179,9 @@ class AudioExtractor:
         #Log time
         #t_start = time.perf_counter()
         # Create input structure to pass as input to model
-        chunk = self.int16_to_float32(chunk)
+        chunk = self.uint16_to_float32(chunk)
+        
+        
         chunk_tensor = torch.from_numpy(chunk).to(self.device, dtype=torch.float32).unsqueeze(0)
         
         self.model_input['mixture'] = chunk_tensor
@@ -187,7 +203,7 @@ class AudioExtractor:
         #output_tensor = output['x'].squeeze(0).T.contiguous().pin_memory()
 
         output_chunk = output_tensor.to("cpu", non_blocking=True).detach().numpy()
-        output_audio = self.float32_to_int16(output_chunk)
+        output_audio = self.float32_to_uint16(output_chunk)
         #t_end = time.perf_counter()
         #del output, output_tensor, chunk_tensor
         #torch.cuda.empty_cache()

@@ -1,8 +1,5 @@
 '''
-This file is about establishing SCI communication with C2000, F28379D launchpad
-Script receives 8 bit uint at 9600, 1000000 baud and prints it out to terminal
-It messes up when receiving data too fast.
-Look into adc lab with SCI added in CCS for other details.
+This file is about reading data in batches. Starting with uint8.
 
 '''
 
@@ -10,76 +7,66 @@ import serial
 import struct
 import time
 
-# print out com ports
-import serial.tools.list_ports
-ports  = serial.tools.list_ports.comports()
-for port in ports:
-    print(port.device) 
+
+USE_8BIT = False
+SAMPLE_SIZE = 1024
+value = 0
+
 
 # Setup communication
-BAUD_RATE = 3125000
+if USE_8BIT:
+    BAUD_RATE = 441000
+else:
+    BAUD_RATE = 882000
+
 ser = serial.Serial(
-    port='COM3',          # Change this to your actual port (e.g., /dev/ttyUSB0)
+    port='COM6',          # Change this to your actual port (e.g., /dev/ttyUSB0)
     baudrate=BAUD_RATE,        # Baud rate
     bytesize=8,           # 8 data bits
     parity=serial.PARITY_NONE,  # No parity
     stopbits=serial.STOPBITS_ONE,  # 1 stop bits
-    timeout=0             # Timeout in seconds
+    timeout=None             # Timeout in seconds
 )
 
-if ser is None:
-    raise ValueError('Com failed')
+def check_integrity(buf):
+    global value
+    if USE_8BIT:
+        buf = list(buf)
+        for i in range(len(buf)):
+            if buf[i] != value:
+                pass  
+            value += 1
+            value &= 0xFF
+    else:
+        buf = list(struct.unpack(f'>{SAMPLE_SIZE//2}H', buf))
+        for i in range(0, len(buf)):
+            if buf[i] != value:
+                pass
+            value += 1
+            value &= 0xFFFF
+
+
+        
+
 
 # Reset buffer
 ser.reset_input_buffer()
 
 # Set constants for communication
-running = True
-sample_size = 1
-print("Receiving stereo audio...")
 
-data = []
-count = 0
-raw_data = []
-received = []
 try:
-    while count < 24000: # and shared_queue.empty():
-
-        if ser.in_waiting >= sample_size:
-            #start = time.perf_counter()
-            raw_data = ser.read(sample_size)
-            data.extend(raw_data)
-            count += 60
-            #stop = time.perf_counter()
-            #if stop - start > (30 * 0.000022):
-            #    print('Error')
-            #values = [hex(i) for i in raw_data]
-            #print(values)
-
-          
-
-            
-        else:
-            pass 
-    #print(value)
+    buf = ser.read(SAMPLE_SIZE)
+    check_integrity(buf)
+    pass
+    # while True:
+    #     buf = ser.read(SAMPLE_SIZE)
+    #     check_integrity(buf)
 except KeyboardInterrupt:
-    print(f'Received {count} data points')
+    print(f'Stopped reading')
     
 finally:
     ser.close()
-    #data = [hex(i) for i in data]
-    # Check for error
-    
-    for i in range(0, len(data), 3):
-        value = (data[i + 2] << 8) + data[i + 1]
-        received.append(value)
-        if data[i] != 0xaa:
-            print(data[i])
-            print('Error')
-            break
-    print(data[:18])
-    print(len(received))
-    print(received[:100])
+
     
             
     

@@ -18,8 +18,8 @@ from torchmetrics.functional import(
     signal_distortion_ratio as sdr,
     scale_invariant_signal_distortion_ratio as si_sdr)
 
-from dcc_tf import mod_pad, MaskNet
-from eval_utils import itd_diff, ild_diff
+from isolation.dcc_tf import mod_pad, MaskNet
+from isolation.eval_utils import itd_diff, ild_diff
 
 class Net(nn.Module):
     def __init__(self, label_len, L=8,
