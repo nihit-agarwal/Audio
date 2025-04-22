@@ -11,7 +11,7 @@ import time
 import threading
 from queue import Queue
 from helpers import *
-from numpy import np
+import numpy as np
 
 # Setup serial comm
 BAUD_RATE = 882000
@@ -35,10 +35,10 @@ soundIsolate = None
 import psutil
 import os
 
-def generate_frequency_sweep_chunks(duration=30, start_freq=20, end_freq=20000,
-                                     sample_rate=44100, chunk_size=512):
+def generate_frequency_sweep_chunks_uint16(duration=30, start_freq=20, end_freq=20000,
+                                            sample_rate=44100, chunk_size=512):
     """
-    Generates a logarithmic frequency sweep and returns audio in chunks.
+    Generates a logarithmic frequency sweep and returns audio in chunks as uint16_t values.
 
     Parameters:
     - duration (float): Duration of the sweep in seconds.
@@ -48,21 +48,21 @@ def generate_frequency_sweep_chunks(duration=30, start_freq=20, end_freq=20000,
     - chunk_size (int): Number of samples per buffer.
 
     Returns:
-    - List[np.ndarray]: List of audio chunks (16-bit PCM samples).
+    - List[np.ndarray]: List of audio chunks (uint16 samples in range [0, 65535]).
     """
-    # Time vector
     t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
-    
+
     # Logarithmic frequency sweep
     sweep = np.sin(2 * np.pi * start_freq * ((end_freq / start_freq) ** (t / duration) - 1) / np.log(end_freq / start_freq))
-    
-    # Normalize to 16-bit PCM range
-    sweep_int16 = np.int16(sweep / np.max(np.abs(sweep)) * 32767)
+
+    # Normalize from [-1, 1] → [0, 65535]
+    sweep_uint16 = np.uint16(((sweep + 1.0) / 2.0) * 65535)
 
     # Split into chunks
-    chunks = [sweep_int16[i:i+chunk_size] for i in range(0, len(sweep_int16), chunk_size)]
-    
+    chunks = [sweep_uint16[i:i + chunk_size] for i in range(0, len(sweep_uint16), chunk_size)]
+
     return chunks
+
 
 def set_process_priority():
     # Set process priority
