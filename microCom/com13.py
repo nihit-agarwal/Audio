@@ -61,7 +61,7 @@ def read_wav_as_uint16_chunks(filename='gagnam.wav', chunk_size=NUM_SAMPLES):
 
     return chunks
 
-def read_wav_and_chunk_to_uint8(filename='gagnam.wav', chunk_size=NUM_SAMPLES * 2):
+def read_wav_and_chunk_to_uint8(filename='bruno.wav', chunk_size=NUM_SAMPLES * 2):
     # Step 1: Load WAV file
     rate, data = wavfile.read(filename)
     print(f"Loaded WAV: {filename}, Sample rate: {rate}, Samples: {len(data)}")
@@ -95,7 +95,7 @@ if USE_8_BIT:
     BAUD_RATE = 441000
 else:
     chunks = read_wav_as_uint16_chunks()
-    BAUD_RATE = 921600
+    BAUD_RATE = 882000
 chunk_id = 0
 
 

@@ -52,7 +52,7 @@ print('Recording mic data for 20 sec')
 count = 0
 try:
     input('Hit enter to start')
-    while count < 2000:
+    while count < 1000:
         buf = ser.read(NUM_SAMPLES * 2)
         decodeData(buf, recorded)
         count += 1
@@ -63,7 +63,7 @@ finally:
     print(len(recorded))
     data_uint16 = np.array(recorded, dtype=np.uint16)
     data_int16 = (data_uint16.astype(np.int32) - 32768).astype(np.int16)
-    sf.write('sounds/micRecorded.wav', data_int16, SAMPLE_RATE)
+    sf.write('sounds/mixedAudio.wav', data_int16, SAMPLE_RATE)
 
     
 

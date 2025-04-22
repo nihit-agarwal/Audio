@@ -75,6 +75,10 @@ class AudioExtractor:
         numpy_array = y['x'].squeeze(0).cpu().detach()
         sf.write("sounds/bird_offline_test.wav", numpy_array.T, sr)
 
+    def rms(self, signal):
+        """Normalize signal to a target RMS value."""
+        rms = np.sqrt(np.mean(signal ** 2))
+        return rms
         
     def stream_test(self, in_file=None, out_file=None, label=2):
         # Check if model was initialized
@@ -133,22 +137,64 @@ class AudioExtractor:
             sf.write(out_file, processed_audio, samplerate=sr)
         return time_arr
 
+
+    def stream_mono_test(self, in_file, out_file, label):
+        # Check if model was initialized
+        if self.model == None:
+            self.initialize_model()
+            model = self.model
+        
+        y, sr = sf.read(in_file,dtype="float32")
+
+        
+
+        # List to stored final output
+        processed_audio = []
+
+        if len(y.shape) == 2:
+            y = y[:,0].flatten()
+        
+        print(y.shape)
+
+        for i in range(0, y.shape[0], self.chunk_size):
+
+            # Imitate by getting list of uint16
+            input_list = self.float32_to_uint16(y[i:i+self.chunk_size]).tolist()
+
+            # Run model
+            output_list, _  = self.run(label, input_list)
+            
+            
+            processed_audio.extend(output_list)
+
+        # Conversion for saving
+        processed_audio = self.uint16_to_float32(np.array(processed_audio))
+        sf.write(out_file, processed_audio, samplerate=sr)
+
+
+    
+
+    def mono_to_stereo(self, chunk):
+        # Converts list of uint16 numbers representing mono audio to np.array of stereo audio
+        mono_audio = np.array(chunk)
+        stereo_audio = np.vstack([mono_audio, mono_audio])
+        return stereo_audio
+    
+    def stereo_to_mono(self, chunk):
+        # Converts np.array of shape 2, N to single channel audio list of numbers
+        return chunk[0, :].tolist()
+
     def uint16_to_float32(self, chunk):
         # First convert uint16 (0 to 65535) to a centered format by subtracting 32768
         # Then normalize to -1.0 to 1.0 float range
-
-        flatten_input = np.array(chunk)
-        chunk = np.vstack([flatten_input, flatten_input])
-        print("Input shape: ", chunk.shape)
         return (chunk.astype(np.float32) - 32768) / 32768.0
         
     def float32_to_uint16(self, chunk):
         # Scale float values (-1.0 to 1.0) to centered uint16 range
         # Add 32768 to shift from signed-style range to unsigned range
-        print("output shape: ", chunk.shape)
-        chunk = chunk[0, :]
-        chunk = np.clip(chunk * 32768 + 32768, 0, 65535).astype(np.uint16).tolist()
+        chunk = np.clip(chunk * 32768 + 32768, 0, 65535).astype(np.uint16)
         return chunk
+    
     def chunk_size_analysis(self):
         median_times = []
         chunk_sizes = []
@@ -166,6 +212,10 @@ class AudioExtractor:
 
             
     def run(self, label, chunk):
+        """
+        Takes in input of uint16 numbers list (mono)
+        and returns output of uint16 numbers list mono
+        """
         # Check if model is initialized
         if self.model == None:
             self.initialize_model()
@@ -179,10 +229,12 @@ class AudioExtractor:
         #Log time
         #t_start = time.perf_counter()
         # Create input structure to pass as input to model
-        chunk = self.uint16_to_float32(chunk)
+        stereo_chunk = self.mono_to_stereo(chunk)
+        float_stereo_chunk = self.uint16_to_float32(stereo_chunk)
         
+        referenceRMS = self.rms(float_stereo_chunk)
         
-        chunk_tensor = torch.from_numpy(chunk).to(self.device, dtype=torch.float32).unsqueeze(0)
+        chunk_tensor = torch.from_numpy(float_stereo_chunk).to(self.device, dtype=torch.float32).unsqueeze(0)
         
         self.model_input['mixture'] = chunk_tensor
         self.model_input['label_vector'] = self.emb
@@ -199,15 +251,25 @@ class AudioExtractor:
         t_end = time.perf_counter()
         #print(f'Inference time {t_end - t_start:.4f}')
         # Extract the audio output
-        output_tensor = output['x'].squeeze(0).T
-        #output_tensor = output['x'].squeeze(0).T.contiguous().pin_memory()
-
+        output_tensor = output['x'].squeeze(0)
         output_chunk = output_tensor.to("cpu", non_blocking=True).detach().numpy()
-        output_audio = self.float32_to_uint16(output_chunk)
+
+        # Amplify
+        output_chunk  = output_chunk * 2
+        extractedRMS = self.rms(output_chunk)
+
+        uint16_stereo_chunk = self.float32_to_uint16(output_chunk)
+        mono_chunk = self.stereo_to_mono(uint16_stereo_chunk)
+        
+        # Condition to play chunk or not
+        play = False
+        #if extractedRMS / referenceRMS > 0.5:
+        play = True
+        
         #t_end = time.perf_counter()
         #del output, output_tensor, chunk_tensor
         #torch.cuda.empty_cache()
-        return output_audio
+        return mono_chunk, play
 
 if __name__ == '__main__':
     audioProcessor = AudioExtractor()

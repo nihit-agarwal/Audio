@@ -2,12 +2,23 @@ import numpy as np
 import pyroomacoustics as pra
 import soundfile as sf
 
+def rms_normalize(signal, target_rms=0.1):
+    """Normalize signal to a target RMS value."""
+    rms = np.sqrt(np.mean(signal ** 2))
+    if rms > 0:
+        return signal * (target_rms / rms)
+    else:
+        return signal
+
+
+
 # Load two audio sources (force mono)
 sound1, fs1 = sf.read("sounds/cat.wav")
-sound2, fs2 = sf.read("sounds/bird.mp3")
+sound2, fs2 = sf.read("sounds/doorKnock.mp3")
 
 assert fs1 == fs2, "Sampling rates must match!"
 fs = fs1  # Use common sampling rate
+
 
 # Convert to mono if stereo
 if len(sound1.shape) == 2:
@@ -15,6 +26,10 @@ if len(sound1.shape) == 2:
 if len(sound2.shape) == 2:
     sound2 = np.mean(sound2, axis=1)
 
+
+# Normalize
+sound1 = rms_normalize(sound1)
+sound2  = rms_normalize(sound2)
 # Make both signals the same length
 max_length = max(len(sound1), len(sound2))
 sound1 = np.pad(sound1, (0, max_length - len(sound1)))
@@ -49,6 +64,6 @@ room.simulate()  #  This computes RIR and convolves automatically!
 binaural_audio = np.column_stack((room.mic_array.signals[0], room.mic_array.signals[1]))
 
 # Save the binaural output
-sf.write("binaural_output.wav", binaural_audio, fs)
+sf.write("door_cat.wav", binaural_audio, fs)
 
 print(" Binaural simulation completed successfully!")

@@ -11,6 +11,8 @@ import time
 import threading
 from queue import Queue
 from helpers import *
+import csv
+
 
 # Setup serial comm
 BAUD_RATE = 882000
@@ -18,9 +20,11 @@ NUM_SAMPLES = 512
 PORT = 'COM6'
 ser = None
 
+# Closing condition
+running = True
 
 # Queue stuff
-procQ = None
+#procQ = None
 sendQ = None
 
 # Music stuff
@@ -28,8 +32,11 @@ chunks = None
 chunk_id = None
 
 # ML stuff
-LABEL = "glass_breaking"
+LABEL = "birds_chirping"
 soundIsolate = None
+
+f = open('mloutput.csv', 'a', newline='')
+writer = csv.writer(f)
 
 import psutil
 import os
@@ -45,6 +52,20 @@ def set_process_priority():
 
 set_process_priority()
 
+def average_uint16_audio(list1, list2):
+    # Convert to numpy arrays
+    arr1 = np.array(list1, dtype=np.uint16)
+    arr2 = np.array(list2, dtype=np.uint16)
+    
+    # Promote to int32 to avoid overflow, average, then clip
+    avg = ((arr1.astype(np.int32) + arr2.astype(np.int32)) // 2)
+    
+    # Clip to valid uint16 range
+    avg = np.clip(avg, 0, 65535).astype(np.uint16)
+    
+    # Convert back to list if needed
+    return avg.tolist()
+
 def audio_inject(musicBuf, inputBuf):
     """
     Method to take in uint16 music and add the ML data to it
@@ -54,56 +75,61 @@ def audio_inject(musicBuf, inputBuf):
     """
     global soundIsolate
 
-    ouput_audio_chunk = soundIsolate.run(LABEL, inputBuf)
+    ouput_audio_chunk, play = soundIsolate.run(LABEL, inputBuf)
     # Need to edit
-
-    return musicBuf
-
+    # add music
+    play = False
+    if play:
+        mashedBuf = average_uint16_audio(ouput_audio_chunk, musicBuf)
+        return mashedBuf
+    else:
+        return ouput_audio_chunk
+    
 # Thread to send data to DMA
-def receive_fn():
-    global procQ, ser
-    while True:
-        recBuf = ser.read(NUM_SAMPLES * 2)
-        procQ.put(recBuf)
+# def receive_fn():
+#     global procQ, ser
+#     while True:
+#         recBuf = ser.read(NUM_SAMPLES * 2)
+#         procQ.put(recBuf)
 
 # Thread to receive data from DMA
 def send_fn():
-    global sendQ, ser
-    while True:
+    global sendQ, ser, running
+    while running:
         outBuf = sendQ.get()
         ser.write(outBuf)
 
 # Thread to compute music / ML
-def compute_fn():
-    global procQ, sendQ, chunks, chunk_id
-    firstComputed = False
-    while True:
-        outBuf = chunks[chunk_id]
-        chunk_id += 1
-        chunk_id = chunk_id % len(chunks)
-        if not firstComputed:
-            if not procQ.empty():
-                inputAud = procQ.get()
-                inputAud = convert_bytes_to_16bit_list(inputAud, NUM_SAMPLES)
-                outBuf = audio_inject(outBuf, inputAud)
-                firstComputed = True
-        else:
-            inputAud = procQ.get()
-            inputAud = convert_bytes_to_16bit_list(inputAud, NUM_SAMPLES)
-            outBuf = audio_inject(outBuf, inputAud)
+# def compute_fn():
+    # global procQ, sendQ, chunks, chunk_id, running
+    # firstComputed = False
 
-        # Convert uint16 to bytes
-        outBuf = convert_16bit_to_bytes_struct(outBuf)
-        sendQ.put(outBuf)
+    # while running:
+    #     outBuf = chunks[chunk_id]
+    #     chunk_id += 1
+    #     chunk_id = chunk_id % len(chunks)
+    #     if not firstComputed:
+    #         if ser.in_waiting >= NUM_SAMPLES * 2:
+    #             recBuf = ser.read(NUM_SAMPLES * 2)
+    #             recBuf = convert_bytes_to_16bit_list(recBuf, NUM_SAMPLES)
+    #             outBuf = audio_inject(outBuf, recBuf)
+    #             firstComputed = True
+    #     else:
+    #         recBuf = ser.read(NUM_SAMPLES * 2)
+    #         recBuf = convert_bytes_to_16bit_list(recBuf, NUM_SAMPLES)
+    #         outBuf = audio_inject(outBuf, recBuf)
+
+    #     # Convert uint16 to bytes
+    #     outBuf = convert_16bit_to_bytes_struct(outBuf)
+    #     sendQ.put(outBuf)
         
 
 
 
 def main():
-    global sendQ, procQ, chunks, chunk_id, ser, soundIsolate
+    global sendQ, chunks, chunk_id, ser, soundIsolate, running
     # Thread safe global queues
     sendQ = Queue(maxsize=1)
-    procQ = Queue(maxsize=1)
 
     # Music play stuff
     chunks = read_wav_as_uint16_chunks(chunk_size=NUM_SAMPLES)
@@ -129,21 +155,42 @@ def main():
 
     # Create threads
     print('Starting threads')
-    receiveThread = threading.Thread(target=receive_fn)
+    #receiveThread = threading.Thread(target=receive_fn)
     sendThread = threading.Thread(target=send_fn)
-    computeThread = threading.Thread(target=compute_fn)
+    #computeThread = threading.Thread(target=compute_fn)
 
     try:
         # Start threads
-        receiveThread.start()
+        #receiveThread.start()
+        #computeThread.start()
         sendThread.start()
-        computeThread.start()
+        
+        firstComputed = False
 
-        # Busy wait
-        while True:
-            pass
+        while running:
+            outBuf = chunks[chunk_id]
+            chunk_id += 1
+            chunk_id = chunk_id % len(chunks)
+            if not firstComputed:
+                if ser.in_waiting >= NUM_SAMPLES * 2:
+                    recBuf = ser.read(NUM_SAMPLES * 2)
+                    recBuf = convert_bytes_to_16bit_list(recBuf, NUM_SAMPLES)
+                    outBuf = audio_inject(outBuf, recBuf)
+                    firstComputed = True
+            else:
+                recBuf = ser.read(NUM_SAMPLES * 2)
+                recBuf = convert_bytes_to_16bit_list(recBuf, NUM_SAMPLES)
+                outBuf = audio_inject(outBuf, recBuf)
+
+            # Convert uint16 to bytes
+            outBuf = convert_16bit_to_bytes_struct(outBuf)
+            sendQ.put(outBuf)
     except KeyboardInterrupt:
         print('Ending threads')
+        running = False
+        sendThread.join()
+        #computeThread.join()
+
     
 
 
