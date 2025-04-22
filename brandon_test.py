@@ -41,50 +41,51 @@ def get_wav_files_and_labels(directory_path: str):
                 print(f"Warning: '{file}' does not match expected naming pattern. Skipped.")
 
     return wav_files, labels
-    
-
-# Initialize the model to use for processing
-soundIsolate = audioML.AudioExtractor()
-soundIsolate.initialize_model()
-soundIsolate.chunk_size = 512
-
-input_dir_path = 'brandon_test/input/'
-output_dir_path = 'brandon_test/output/'
-
-
-input_files, labels = get_wav_files_and_labels(input_dir_path)
-
-print(input_files)
-print(labels)
-
-output_files = []
-
-# create output files
-for i in range(len(input_files)):
-    base_name = os.path.splitext(os.path.basename(input_files[i]))[0]
-    temp = []
-    
-    temp.append(f"{output_dir_path}{base_name}_{labels[i][0]}_extracted.wav")
-    temp.append(f"{output_dir_path}{base_name}_{labels[i][1]}_extracted.wav")
-    
-    output_files.append(temp)
-    
-print(output_files)
-
-
-time_arr = []
-for i in range(len(input_files)):
-    time_arr = soundIsolate.stream_test(input_files[i], output_files[i], label_num)
-    
-    first_label_num = soundIsolate.labels.index(labels[i][0])
-    second_label_num = soundIsolate.labels.index(labels[i][1])
-    
-    time_arr.append(soundIsolate.stream_test(input_files[i], output_files[i][0], first_label_num))
-    time_arr.append(soundIsolate.stream_test(input_files[i], output_files[i][1], second_label_num))
-    
 
 
     
+if __name__ == '__main__':
+    
+    # Initialize the model to use for processing
+    soundIsolate = audioML.AudioExtractor()
+    soundIsolate.initialize_model()
+    soundIsolate.chunk_size = 512
+
+    input_dir_path = 'brandon_test/input/'
+    output_dir_path = 'brandon_test/output/'
+
+
+    input_files, labels = get_wav_files_and_labels(input_dir_path)
+
+    print(input_files)
+    print(labels)
+
+    output_files = []
+
+    # create output files
+    for i in range(len(input_files)):
+        base_name = os.path.splitext(os.path.basename(input_files[i]))[0]
+        temp = []
+        
+        temp.append(f"{output_dir_path}{base_name}_{labels[i][0]}_extracted.wav")
+        temp.append(f"{output_dir_path}{base_name}_{labels[i][1]}_extracted.wav")
+        
+        output_files.append(temp)
+        
+    print(output_files)
+
+
+    # time_arr = []
+    # for i in range(len(input_files)):
+    #     first_label_num = soundIsolate.labels.index(labels[i][0])
+    #     second_label_num = soundIsolate.labels.index(labels[i][1])
+        
+    #     time_arr.append(soundIsolate.stream_test(input_files[i], output_files[i][0], first_label_num))
+    #     time_arr.append(soundIsolate.stream_test(input_files[i], output_files[i][1], second_label_num))
+        
+
+
+        
 
 
 
