@@ -11,6 +11,7 @@ import time
 import threading
 from queue import Queue
 from helpers import *
+from numpy import np
 
 # Setup serial comm
 BAUD_RATE = 882000
@@ -33,6 +34,35 @@ soundIsolate = None
 
 import psutil
 import os
+
+def generate_frequency_sweep_chunks(duration=30, start_freq=20, end_freq=20000,
+                                     sample_rate=44100, chunk_size=512):
+    """
+    Generates a logarithmic frequency sweep and returns audio in chunks.
+
+    Parameters:
+    - duration (float): Duration of the sweep in seconds.
+    - start_freq (float): Starting frequency in Hz.
+    - end_freq (float): Ending frequency in Hz.
+    - sample_rate (int): Sampling rate in Hz.
+    - chunk_size (int): Number of samples per buffer.
+
+    Returns:
+    - List[np.ndarray]: List of audio chunks (16-bit PCM samples).
+    """
+    # Time vector
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    
+    # Logarithmic frequency sweep
+    sweep = np.sin(2 * np.pi * start_freq * ((end_freq / start_freq) ** (t / duration) - 1) / np.log(end_freq / start_freq))
+    
+    # Normalize to 16-bit PCM range
+    sweep_int16 = np.int16(sweep / np.max(np.abs(sweep)) * 32767)
+
+    # Split into chunks
+    chunks = [sweep_int16[i:i+chunk_size] for i in range(0, len(sweep_int16), chunk_size)]
+    
+    return chunks
 
 def set_process_priority():
     # Set process priority
@@ -106,7 +136,8 @@ def main():
     procQ = Queue(maxsize=1)
 
     # Music play stuff
-    chunks = read_wav_as_uint16_chunks(chunk_size=NUM_SAMPLES)
+    # chunks = read_wav_as_uint16_chunks(chunk_size=NUM_SAMPLES)
+    chunks = generate_frequency_sweep_chunks()
     chunk_id = 0
 
     # Initialize the model to use for processing

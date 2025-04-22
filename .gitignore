@@ -1,3 +1,4 @@
 multiProc
 __pycache__/
 *.pyc
+env/
